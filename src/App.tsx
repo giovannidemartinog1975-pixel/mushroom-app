@@ -59,15 +59,13 @@ function App() {
       const { data, error } = await supabase
         .from('species')
         .select(
-          'id, scientific_name, common_name_it, common_name_es, is_mycorrhizal, host_trees, ' +
-          'soil_temp_min_c, air_temp_min_c, air_temp_max_c, humidity_min_pct, rain_cumulative_mm_min, ' +
-          'altitude_min_m, altitude_max_m, season_start_month, season_end_month'
+          'id, scientific_name, common_name_it, common_name_es, is_mycorrhizal, host_trees, soil_temp_min_c, air_temp_min_c, air_temp_max_c, humidity_min_pct, rain_cumulative_mm_min, altitude_min_m, altitude_max_m, season_start_month, season_end_month'
         )
 
       if (error) {
         setError(error.message)
       } else {
-        setSpecies(data ?? [])
+        setSpecies((data as unknown as Species[]) ?? [])
       }
       setLoading(false)
     }
