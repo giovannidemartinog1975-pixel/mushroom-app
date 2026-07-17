@@ -20,6 +20,16 @@ type Zone = ZoneParams & {
 
 type ScoredSpecies = Species & { score: number; explanation: string }
 
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
 function App() {
   const [zones, setZones] = useState<Zone[]>([])
   const [selectedZoneId, setSelectedZoneId] = useState<string>('')
@@ -28,7 +38,9 @@ function App() {
   const [weatherError, setWeatherError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [gpsStatus, setGpsStatus] = useState<'idle' | 'locating' | 'found' | 'denied' | 'unsupported'>('idle')
 
+  // Carica le zone disponibili una sola volta all'avvio
   useEffect(() => {
     async function loadZones() {
       const { data, error } = await supabase
@@ -42,17 +54,49 @@ function App() {
         return
       }
 
-      setZones(data ?? [])
-      if (data && data.length > 0) {
-        setSelectedZoneId(data[0].id)
-      } else {
+      const loadedZones = data ?? []
+      setZones(loadedZones)
+
+      if (loadedZones.length === 0) {
         setLoading(false)
+        return
       }
+
+      // Prova a rilevare la posizione GPS per scegliere la zona più vicina
+      if (!('geolocation' in navigator)) {
+        setGpsStatus('unsupported')
+        setSelectedZoneId(loadedZones[0].id)
+        return
+      }
+
+      setGpsStatus('locating')
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords
+          let nearest = loadedZones[0]
+          let nearestDist = Infinity
+          for (const z of loadedZones) {
+            const d = distanceKm(latitude, longitude, z.centroid_lat, z.centroid_lon)
+            if (d < nearestDist) {
+              nearestDist = d
+              nearest = z
+            }
+          }
+          setSelectedZoneId(nearest.id)
+          setGpsStatus('found')
+        },
+        () => {
+          setGpsStatus('denied')
+          setSelectedZoneId(loadedZones[0].id)
+        },
+        { timeout: 8000 }
+      )
     }
 
     loadZones()
   }, [])
 
+  // Lista specie (sempre tutte, per ora)
   useEffect(() => {
     async function loadSpecies() {
       setLoading(true)
@@ -75,6 +119,7 @@ function App() {
     }
   }, [selectedZoneId])
 
+  // Meteo live da Open-Meteo per la zona selezionata
   useEffect(() => {
     const zone = zones.find((z) => z.id === selectedZoneId)
     if (!zone) return
@@ -130,7 +175,7 @@ function App() {
         Mushroom Finder
       </h1>
 
-      <div className="max-w-md mx-auto mb-4">
+      <div className="max-w-md mx-auto mb-1">
         <label className="block text-sm text-stone-600 mb-1" htmlFor="zone-select">
           Zona
         </label>
@@ -148,6 +193,13 @@ function App() {
           ))}
         </select>
       </div>
+
+      <p className="max-w-md mx-auto text-xs text-stone-400 mb-4">
+        {gpsStatus === 'locating' && 'Rilevo la tua posizione...'}
+        {gpsStatus === 'found' && '📍 Zona rilevata automaticamente dal GPS'}
+        {gpsStatus === 'denied' && 'Posizione non condivisa: puoi scegliere la zona a mano'}
+        {gpsStatus === 'unsupported' && 'GPS non disponibile su questo dispositivo'}
+      </p>
 
       <div className="max-w-md mx-auto mb-6 bg-white rounded-lg shadow-sm p-3 border border-stone-200">
         <p className="text-sm font-medium text-stone-700 mb-1">Meteo attuale</p>
